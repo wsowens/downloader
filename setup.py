@@ -11,7 +11,7 @@ if sys.platform == "win32":
     base = "Win32GUI"
 
 setup(name = "ez downloader",
-      version = "0.1.1",
+      version = "1.0.0",
       options = {
         'build_exe': {'include_files': ["downloader.ui", 'icon.ico', 'icon.png']},
         'bdist_msi': {'all_users': True, 'install_icon': 'icon.ico'}

@@ -20,6 +20,7 @@ class DownloadSignals(QObject):
     """Possible signals from a DownloadWorker"""
     finished = pyqtSignal(int)
     message = pyqtSignal(str)
+    ready = pyqtSignal(str)
 
 
 class DownloadWorker(QRunnable):
@@ -47,9 +48,14 @@ class DownloadWorker(QRunnable):
         exit_code = None
         while True:
             exit_code = dl_job.poll()
-            # TODO: fix blocking output
-            for msg in dl_job.stdout:
-                self.signals.message.emit(msg.decode().strip())
+            # once youtube-dl starts downloading, it uses '\b' to
+            # update the ETA and percent downloaded, instead of printing
+            # to a new line
+            # This sucks for us, because that means stdout.readline will
+            # hang until the download is complete, which makes it hard
+            # for the user to tell what's going on
+            for msg in iter(lambda: dl_job.stdout.read(1), b''):
+                self.signals.ready.emit(msg.decode())
             if exit_code is not None:
                 break
         self.signals.finished.emit(exit_code)
@@ -65,6 +71,10 @@ def start_download():
 
 
 def download_done(exit_code):
+    line = "".join(buffer).strip()
+    if line:
+        form.msg_box.appendPlainText(line)
+    buffer.clear()
     form.download.setEnabled(True)
     form.msg_box.appendPlainText("[main] youtube-dl exited with code "
                                  f"'{exit_code}'")
@@ -72,9 +82,22 @@ def download_done(exit_code):
 def log_message(msg):
     form.msg_box.appendPlainText(msg)
 
+buffer = []
+def byte_ready(byte):
+    if byte == '\b':
+        return
+    if byte == '\r' or byte == '\n':
+        line = "".join(buffer).strip()
+        if line:
+            form.msg_box.appendPlainText(line)
+        buffer.clear()
+        return
+    buffer.append(byte)
+
 
 DownloadWorker.signals.finished.connect(download_done)
 DownloadWorker.signals.message.connect(log_message)
+DownloadWorker.signals.ready.connect(byte_ready)
 
 
 def browse_folder():

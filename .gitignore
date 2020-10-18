@@ -1,5 +1,7 @@
-env
-downloader/__pycache__/*
+# ignore python bytecode
 __pycache__/*
+# ignore the environment
+env/*
+# ignore output directories
 dist/*
 build/*
