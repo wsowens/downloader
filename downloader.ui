@@ -561,7 +561,7 @@
        <item>
         <widget class="QLineEdit" name="folder">
          <property name="text">
-          <string>fasdfsdaf</string>
+          <string/>
          </property>
          <property name="readOnly">
           <bool>true</bool>

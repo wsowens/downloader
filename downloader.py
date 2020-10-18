@@ -1,6 +1,7 @@
 import os, sys, io, pathlib, subprocess
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtCore import pyqtSlot, pyqtSignal, QRunnable, QObject, QThreadPool
 import youtube_dl
 
 # if this script was called with the youtube-dl module, we need to run that
@@ -12,50 +13,100 @@ for index, arg in enumerate(sys.argv):
         if arg == "youtube_dl":
             # run youtube-dl with remaining args
             youtube_dl.main(sys.argv[index+1:])
+            exit()
 
+class DownloadSignals(QObject):
+    """Possible signals from a DownloadWorker"""
+    finished = pyqtSignal(int)
+    message = pyqtSignal(str)
+
+
+class DownloadWorker(QRunnable):
+    '''
+    Worker thread for downloading the youtube video. By running the
+    subprocess in a separate thread, the PyQt5 will not hang.
+    '''
+    signals = DownloadSignals()
+    is_interrupted = False
+
+    def __init__(self, url, folder):
+        super().__init__()
+        self.url = url
+        self.folder = folder
+
+    @pyqtSlot()
+    def run(self):
+        output =  os.path.join(self.folder, "%(title)s-%(id)s.%(ext)s")
+        args = [sys.executable, "-m", "youtube_dl", self.url, "--no-color",
+                "-o", output]
+        self.signals.message.emit(f"[main] {' '.join(args)}")
+        dl_job = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+
+        exit_code = None
+        while True:
+            exit_code = dl_job.poll()
+            for msg in dl_job.stdout:
+                self.signals.message.emit(msg.decode().strip())
+            if exit_code is not None:
+                break
+        self.signals.finished.emit(exit_code)
+
+clicks = 0
 def start_download():
     url = form.url.text()
+    folder = form.folder.text()
+    worker = DownloadWorker(url, folder)
     form.msg_box.clear()
+    form.download.setEnabled(False)
+    threadpool.start(worker)
 
-    output =  os.path.join(form.folder.text(), "%(title)s-%(id)s.%(ext)s")
-    args = [sys.executable, "-m", "youtube_dl", url, "--no-color",
-            "-o", output]
-    form.msg_box.appendPlainText(" ".join(args))
-    dl_job = subprocess.Popen(args,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    exit_code = None
-    while True:
-        exit_code = dl_job.poll()
-        for msg in dl_job.stdout:
-            form.msg_box.appendPlainText(msg.decode().strip())
-        if exit_code is not None:
-            break
-    form.msg_box.appendPlainText(f"youtube-dl exited with code '{exit_code}'")
-    form.download.setFlat(False)
+def download_done(exit_code):
+    form.download.setEnabled(True)
+    form.msg_box.appendPlainText("[main] youtube-dl exited with code "
+                                 f"'{exit_code}'")
+
+def log_message(msg):
+    form.msg_box.appendPlainText(msg)
+
+
+DownloadWorker.signals.finished.connect(download_done)
+DownloadWorker.signals.message.connect(log_message)
 
 
 def browse_folder():
-    new_dir = QFileDialog.getExistingDirectory(window,
-                                               caption="Select a folder to download to",
-                                               directory=form.folder.text()
-                                               )
+    new_dir = QFileDialog.getExistingDirectory(window, caption="Open Folder",
+                                               directory=form.folder.text())
     if new_dir:
         form.folder.setText(new_dir)
 
-dirname, _ = os.path.split(__file__)
+dirname, _ = os.path.split(sys.executable)
 uipath = os.path.join(dirname, "downloader.ui")
-print(dirname)
+
+try:
+    with open(os.path.join(dirname, "last_dir.txt")) as f:
+        start_dir = f.read().strip()
+except OSError:
+    # if we can't find a 'last open'
+    start_dir = str(pathlib.Path.home())
 
 Form, Window = uic.loadUiType(uipath)
 app = QApplication([])
 window = Window()
 form = Form()
+threadpool = QThreadPool()
 form.setupUi(window)
 
 form.download.clicked.connect(start_download)
-form.folder.setText(str(pathlib.Path.home()))
+form.folder.setText(start_dir)
 form.browse.clicked.connect(browse_folder)
 
 window.show()
 app.exec_()
+
+try:
+    with open(os.path.join(dirname, "last_dir.txt"), 'w') as f:
+        f.write(form.folder.text())
+except OSError:
+    print("couldn't save last_dir")
