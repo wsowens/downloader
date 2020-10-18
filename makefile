@@ -5,3 +5,7 @@ env:
 
 bin:
 	cxfreeze --include-files "downloader.ui" downloader.py
+
+
+clean:
+	rm -rf build dist

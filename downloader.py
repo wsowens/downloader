@@ -1,6 +1,7 @@
 import os, sys, io, pathlib, subprocess
 from PyQt5 import uic
 from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QRunnable, QObject, QThreadPool
 import youtube_dl
 
@@ -46,6 +47,7 @@ class DownloadWorker(QRunnable):
         exit_code = None
         while True:
             exit_code = dl_job.poll()
+            # TODO: fix blocking output
             for msg in dl_job.stdout:
                 self.signals.message.emit(msg.decode().strip())
             if exit_code is not None:
@@ -81,19 +83,26 @@ def browse_folder():
     if new_dir:
         form.folder.setText(new_dir)
 
+
+def sys_file(base):
+    if not sys.executable.endswith("python.exe"):
+        return os.path.join(dirname, base)
+    else:
+        return "./" + base
+
 dirname, _ = os.path.split(sys.executable)
-uipath = os.path.join(dirname, "downloader.ui")
 
 try:
-    with open(os.path.join(dirname, "last_dir.txt")) as f:
+    with open(sys_file("last_dir.txt")) as f:
         start_dir = f.read().strip()
 except OSError:
     # if we can't find a 'last open'
-    start_dir = str(pathlib.Path.home())
+    start_dir = str(os.path.join(pathlib.Path.home(), "Downloads"))
 
-Form, Window = uic.loadUiType(uipath)
+Form, Window = uic.loadUiType(sys_file("downloader.ui"))
 app = QApplication([])
 window = Window()
+window.setWindowIcon(QIcon(sys_file("icon.png")))
 form = Form()
 threadpool = QThreadPool()
 form.setupUi(window)
